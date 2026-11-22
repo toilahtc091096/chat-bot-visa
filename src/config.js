@@ -40,6 +40,9 @@ export const config = {
   ),
 
   // Zalo
+  // direct: app tự đăng nhập Zalo (QR). external: dự án khác đã đăng nhập Zalo và gửi tin sang qua POST /api/ingest
+  zaloMode: env.ZALO_MODE === "external" ? "external" : "direct",
+  ingestToken: env.INGEST_TOKEN || "",
   zaloGroupId: env.ZALO_GROUP_ID || "", // có thể chọn trên web thay vì đặt ở đây
   backfillDays: Number(env.BACKFILL_DAYS || 30),
   zaloPageDelayMs: Number(env.ZALO_PAGE_DELAY_MS || 2000),

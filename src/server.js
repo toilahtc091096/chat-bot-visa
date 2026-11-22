@@ -9,7 +9,7 @@ import { answer } from "./chat.js";
 import { listHoSoTypes } from "./extract.js";
 import { listCategories, setImageCategory, updateCategory, classifyImage } from "./images.js";
 import { runPipeline, pipelineState } from "./pipeline.js";
-import { zaloState, startQrLogin, listGroups, currentGroupId, messageCount } from "./zalo/client.js";
+import { zaloState, startQrLogin, listGroups, currentGroupId, messageCount, ingestMessages } from "./zalo/client.js";
 import { backfillGroup, backfillState } from "./zalo/backfill.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -51,6 +51,17 @@ function rowToError(r) {
 
 export function createApp() {
   const app = express();
+
+  // Dự án khác (đang đăng nhập Zalo) gửi tin sang. Xác thực bằng INGEST_TOKEN, không dùng tài khoản web.
+  app.post("/api/ingest", express.json({ limit: "10mb" }), (req, res) => {
+    if (!config.ingestToken) return res.status(503).json({ error: "Chưa cấu hình INGEST_TOKEN" });
+    const token = req.get("x-ingest-token") || "";
+    if (!safeEqual(token, config.ingestToken)) return res.status(401).json({ error: "Sai INGEST_TOKEN" });
+    const { messages, groupId } = req.body || {};
+    if (!Array.isArray(messages)) return res.status(400).json({ error: "Cần { messages: [...] }" });
+    res.json(ingestMessages(messages, groupId ? String(groupId) : undefined));
+  });
+
   app.use(basicAuth);
   app.use(express.json({ limit: "1mb" }));
   app.use(express.static(path.join(here, "..", "public")));
@@ -77,6 +88,7 @@ export function createApp() {
       pipeline: pipelineState,
       usage30d: usage,
       hasApiKey: !!process.env.ANTHROPIC_API_KEY,
+      zaloMode: config.zaloMode,
     });
   });
 

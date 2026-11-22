@@ -66,6 +66,10 @@ git pull && docker compose up -d --build
 
 Dữ liệu (cơ sở dữ liệu, ảnh, cookie Zalo) nằm trong thư mục `data/`. Hãy sao lưu thư mục này định kỳ.
 
+## Tài khoản Zalo đang dùng ở dự án khác?
+
+Mỗi tài khoản Zalo chỉ nghe tin được ở một nơi. Nếu tài khoản phụ đã đăng nhập ở dự án khác, chạy Sổ lỗi với `ZALO_MODE=external` và cho dự án kia chuyển tin sang. Xem [INTEGRATION.md](INTEGRATION.md).
+
 ## Chi phí AI ước tính
 
 | Việc | Model mặc định | Ghi chú |

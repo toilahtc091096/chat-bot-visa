@@ -267,7 +267,7 @@ $("#img-method").addEventListener("change", loadImages);
 loaders.images = () => Promise.all([loadCategories(), loadImages()]);
 
 // ================= HỆ THỐNG =================
-const ZALO_LABEL = { disconnected: "Chưa đăng nhập", waiting_qr: "Chờ quét QR", scanned: "Đã quét, chờ xác nhận", connected: "Đã kết nối", error: "Lỗi" };
+const ZALO_LABEL = { external: "Nhận tin từ dự án khác", disconnected: "Chưa đăng nhập", waiting_qr: "Chờ quét QR", scanned: "Đã quét, chờ xác nhận", connected: "Đã kết nối", error: "Lỗi" };
 const PRICE = { "claude-haiku-5-5": [0.1, 0.5], "claude-sonnet-5-5": [2, 10], "claude-opus-5-5": [4, 20] }; // USD / 1 triệu token
 
 let statusTimer;
@@ -275,7 +275,10 @@ async function loadStatus() {
   const s = await api("/api/status");
   $("#who").textContent = s.user;
   $("#zalo-status").textContent = ZALO_LABEL[s.zalo.status] + (s.zalo.account ? ` (${s.zalo.account})` : "") + (s.zalo.listening ? " · đang nghe tin mới" : "");
-  $("#zalo-detail").textContent = s.zalo.detail || "";
+  $("#zalo-detail").textContent = s.zaloMode === "external"
+    ? (s.zalo.lastIngestAt ? `Lần nhận tin gần nhất: ${fmtTime(s.zalo.lastIngestAt)}` : "Chưa nhận tin nào. Xem INTEGRATION.md để nối dự án kia.")
+    : s.zalo.detail || "";
+  document.querySelectorAll("#btn-qr, #btn-groups, #btn-backfill").forEach((b) => b.classList.toggle("hidden", s.zaloMode === "external"));
   const showQr = s.zalo.status === "waiting_qr";
   $("#qr-box").classList.toggle("hidden", !showQr);
   if (showQr) $("#qr-img").src = "/api/zalo/qr.png?t=" + Date.now();

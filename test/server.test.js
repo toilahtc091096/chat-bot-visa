@@ -6,6 +6,7 @@ import fs from "node:fs";
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "sổ-lỗi-"));
 process.env.APP_USERS = "lan:matkhau1,minh:matkhau2";
+process.env.INGEST_TOKEN = "bi-mat";
 const { createApp } = await import("../src/server.js");
 const { db } = await import("../src/db.js");
 
@@ -54,4 +55,22 @@ test("thêm, lọc, sửa lỗi; sửa nội dung thì thành đã duyệt", asy
 test("không cho sửa trường ngoài danh sách", async () => {
   const r = await call("/api/errors/1", { method: "PATCH", body: JSON.stringify({ cause_ai: "x" }) });
   assert.equal(r.status, 400);
+});
+
+test("ingest: sai token bị chặn, đúng token thì lưu tin của nhóm đã chọn", async () => {
+  const send = (token, body) =>
+    fetch(base + "/api/ingest", { method: "POST", headers: { "Content-Type": "application/json", "X-Ingest-Token": token }, body: JSON.stringify(body) });
+  assert.equal((await send("sai", { messages: [] })).status, 401);
+  const r = await (
+    await send("bi-mat", {
+      messages: [
+        { threadId: "G1", data: { msgId: "i1", uidFrom: "u", dName: "Lan", ts: "1700000000000", msgType: "webchat", content: "Hồ sơ thiếu ảnh" } },
+        { msgId: "i2", idTo: "G1", uidFrom: "u", ts: "1700000001000", msgType: "webchat", content: "Chỉ có data" },
+        { threadId: "G2", data: { msgId: "i3", uidFrom: "u", ts: "1700000002000", msgType: "webchat", content: "Nhóm khác" } },
+      ],
+    })
+  ).json();
+  assert.deepEqual(r, { received: 3, accepted: 2, added: 2, groupId: "G1" });
+  const again = await (await send("bi-mat", { messages: [{ threadId: "G1", data: { msgId: "i1", ts: "1700000000000", content: "x" } }] })).json();
+  assert.equal(again.added, 0);
 });

@@ -1,16 +1,17 @@
 import fs from "node:fs";
 import { Zalo, ThreadType, LoginQRCallbackEventType } from "zca-js";
 import { config } from "../config.js";
-import { db, getSetting } from "../db.js";
+import { db, getSetting, setSetting } from "../db.js";
 import { normalizeMessage } from "./normalize.js";
 import { saveMessages } from "./store.js";
 
 // Trạng thái hiển thị trên trang /zalo
 export const zaloState = {
-  status: "disconnected", // disconnected | waiting_qr | scanned | connected | error
+  status: config.zaloMode === "external" ? "external" : "disconnected", // disconnected | waiting_qr | scanned | connected | error | external
   detail: "",
   account: null,
   listening: false,
+  lastIngestAt: null,
 };
 
 let api = null;
@@ -88,6 +89,30 @@ export async function startQrLogin() {
       return afterLogin(newApi);
     })
     .catch((err) => setState("error", `Đăng nhập QR thất bại: ${err.message}`));
+}
+
+/**
+ * Nhận tin từ dự án khác (chế độ external). Mỗi phần tử là GroupMessage của zca-js
+ * ({ threadId, data }) hoặc chỉ phần data (có idTo là id nhóm).
+ * Chỉ lưu tin của nhóm đã chọn; nếu chưa chọn nhóm thì nhận nhóm của tin đầu tiên.
+ */
+export function ingestMessages(items, groupIdHint) {
+  const rows = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const msg = item.data ? item : { data: item, threadId: groupIdHint || item.idTo };
+    if (!msg.data?.msgId || !msg.data?.ts || !msg.threadId) continue;
+    rows.push(normalizeMessage(msg));
+  }
+  let groupId = currentGroupId();
+  if (!groupId && rows.length) {
+    groupId = rows[0].group_id;
+    setSetting("zalo_group_id", groupId);
+  }
+  const accepted = rows.filter((r) => r.group_id === groupId);
+  const added = saveMessages(accepted);
+  zaloState.lastIngestAt = Date.now();
+  return { received: items.length, accepted: accepted.length, added, groupId };
 }
 
 export function currentGroupId() {
