@@ -58,3 +58,17 @@ def test_errors_crud(client):
     assert client.patch(f"/api/errors/{rows[0]['id']}", json={"cause_ai": "x"}, headers=AUTH).status_code == 400
     assert len(client.get("/api/errors", params={"q": "nền xanh"}, headers=AUTH).json()) == 1
     assert client.get(f"/api/errors/{created['id']}/messages", headers=AUTH).json() == []
+
+
+def test_demo_load_and_clear(client):
+    from app.demo import clear_demo, load_demo
+
+    r = load_demo()
+    assert r["groupId"] == "demo" and r["added"] == r["accepted"] > 10
+    assert client.get("/api/status", headers=AUTH).json()["groupName"] == "Nhóm mẫu (dữ liệu thử)"
+    clear_demo()
+    assert db.one("SELECT COUNT(*) AS n FROM messages")["n"] == 0
+    assert db.get_setting("zalo_group_id") is None and db.get_setting("zalo_group_name") is None
+    db.set_setting("zalo_group_id", "G-that")
+    with pytest.raises(RuntimeError):
+        load_demo()

@@ -26,7 +26,8 @@ Khi trích xuất lỗi, AI không xem lại ảnh mà chỉ đọc category và
 
 ## Cài đặt
 
-- Chạy trên VPS: [DEPLOY.md](DEPLOY.md)
+- Chạy thử trên máy cá nhân (có dữ liệu mẫu): [LOCAL.md](LOCAL.md)
+- Chạy trên VPS Windows: [DEPLOY.md](DEPLOY.md)
 - Nối dự án lọc hồ sơ: [INTEGRATION.md](INTEGRATION.md)
 
 ## Chi phí AI ước tính
