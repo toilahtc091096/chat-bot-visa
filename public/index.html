@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sổ lỗi hồ sơ</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Sổ lỗi hồ sơ</h1>
+    <nav>
+      <button data-tab="errors" class="active">Bảng lỗi</button>
+      <button data-tab="chat">Chatbot</button>
+      <button data-tab="images">Ảnh</button>
+      <button data-tab="system">Zalo &amp; hệ thống</button>
+    </nav>
+    <span id="who"></span>
+  </header>
+
+  <!-- ============ BẢNG LỖI ============ -->
+  <main id="tab-errors" class="tab">
+    <div class="toolbar">
+      <select id="f-type"><option value="">Tất cả loại hồ sơ</option></select>
+      <select id="f-status">
+        <option value="">Mọi trạng thái</option>
+        <option value="ai">AI đoán (chưa duyệt)</option>
+        <option value="reviewed">Đã duyệt</option>
+        <option value="rejected">Không phải lỗi</option>
+      </select>
+      <input id="f-q" type="search" placeholder="Tìm trong tên, mô tả, nguyên nhân..." />
+      <button id="btn-add-error">+ Thêm lỗi</button>
+      <span id="error-count" class="muted"></span>
+    </div>
+    <p class="muted small">Bấm vào ô để sửa. Sửa nội dung sẽ tự đánh dấu "Đã duyệt". Bấm 💬 để xem tin nhắn gốc.</p>
+    <div class="table-wrap">
+      <table id="errors-table">
+        <thead>
+          <tr>
+            <th>#</th><th>Loại hồ sơ</th><th>Tên lỗi</th><th>Meaning (lỗi là gì)</th><th>Nguyên nhân</th>
+            <th>Cách xử lý</th><th>Lưu ý tránh lỗi</th><th>Mức</th><th>Trạng thái</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- ============ CHATBOT ============ -->
+  <main id="tab-chat" class="tab hidden">
+    <div class="toolbar">
+      <label>Loại hồ sơ đang làm:
+        <select id="chat-type"><option value="">(không chọn: dùng toàn bộ sổ lỗi)</option></select>
+      </label>
+      <button id="btn-checklist">Cần lưu ý gì cho loại hồ sơ này?</button>
+      <button id="btn-chat-clear" class="secondary">Cuộc trò chuyện mới</button>
+    </div>
+    <div id="chat-log"></div>
+    <form id="chat-form">
+      <textarea id="chat-input" rows="3" placeholder="Mô tả hồ sơ bạn đang làm, hoặc hỏi về một lỗi... (Enter để gửi, Shift+Enter xuống dòng)"></textarea>
+      <button type="submit">Gửi</button>
+    </form>
+  </main>
+
+  <!-- ============ ẢNH ============ -->
+  <main id="tab-images" class="tab hidden">
+    <h2>Category ảnh và hint</h2>
+    <p class="muted small">Hint là dấu hiệu để AI nhận ra loại ảnh mà không phải xem ảnh đầy đủ (tiết kiệm token). Mỗi dòng một hint. Bạn sửa được.</p>
+    <div id="categories"></div>
+    <h2>Ảnh đã phân loại</h2>
+    <div class="toolbar">
+      <select id="img-cat"><option value="">Tất cả category</option><option value="none">Chưa có category</option></select>
+      <select id="img-method">
+        <option value="">Mọi cách phân loại</option>
+        <option value="hash">Ảnh gần giống (0 token)</option>
+        <option value="hint">Theo hint (model rẻ)</option>
+        <option value="vision">Xem ảnh đầy đủ</option>
+        <option value="manual">Người sửa</option>
+        <option value="failed">Lỗi tải ảnh</option>
+      </select>
+    </div>
+    <div id="images-grid"></div>
+  </main>
+
+  <!-- ============ HỆ THỐNG ============ -->
+  <main id="tab-system" class="tab hidden">
+    <section class="card">
+      <h2>Kết nối Zalo</h2>
+      <p>Trạng thái: <b id="zalo-status"></b> <span id="zalo-detail" class="muted"></span></p>
+      <p class="muted small">Tài khoản Zalo đăng nhập ở dự án lọc hồ sơ; dự án đó chuyển tin của nhóm sang đây (xem INTEGRATION.md).</p>
+    </section>
+    <section class="card">
+      <h2>Nhóm theo dõi</h2>
+      <p>Nhóm hiện tại: <b id="group-name">(chưa chọn)</b></p>
+      <p id="msg-stats" class="muted"></p>
+    </section>
+    <section class="card">
+      <h2>Xử lý</h2>
+      <p class="muted small">Hệ thống tự xử lý tin mới theo lịch. Bấm nút để xử lý ngay (kể cả tin vừa đến).</p>
+      <button id="btn-process">Xử lý tin mới ngay</button>
+      <pre id="jobs" class="muted"></pre>
+    </section>
+    <section class="card">
+      <h2>Chi phí AI (30 ngày)</h2>
+      <div id="usage"></div>
+    </section>
+  </main>
+
+  <dialog id="dlg">
+    <div id="dlg-body"></div>
+    <form method="dialog"><button>Đóng</button></form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

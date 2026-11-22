@@ -1,0 +1,17 @@
+# Chạy bằng Docker (không bắt buộc, xem DEPLOY.md cho cách chạy trực tiếp).
+# DATABASE_URL trong .env trỏ tới Postgres có sẵn trên VPS: dùng host.docker.internal thay cho 127.0.0.1.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /app/data
+      HOST: 0.0.0.0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    mem_limit: 1g
