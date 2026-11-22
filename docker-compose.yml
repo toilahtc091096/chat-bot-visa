@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:3000:3000"   # chỉ mở trong máy; truy cập từ ngoài qua Caddy (HTTPS)
+    mem_limit: 1g
+
+  # HTTPS tự động. Cần DOMAIN trong .env trỏ về IP của VPS.
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
