@@ -22,6 +22,8 @@ Khi trích xuất lỗi, AI không xem lại ảnh mà chỉ đọc category và
 
 ## Cài lên VPS
 
+Không dùng Docker (Node.js + pm2)? Xem [DEPLOY.md](DEPLOY.md). Phần dưới đây là cách chạy bằng Docker.
+
 Yêu cầu: VPS Linux (Ubuntu 22.04/24.04), từ 2 GB RAM, đã cài Docker. Nếu chưa có Docker:
 
 ```bash

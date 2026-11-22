@@ -5,6 +5,7 @@ services:
     env_file: .env
     environment:
       DATA_DIR: /app/data
+      HOST: 0.0.0.0   # trong container phải mở 0.0.0.0; bên ngoài chỉ mở 127.0.0.1 (xem ports)
     volumes:
       - ./data:/app/data
     ports:

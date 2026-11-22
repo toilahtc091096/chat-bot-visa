@@ -20,6 +20,7 @@ fs.mkdirSync(path.join(dataDir, "images"), { recursive: true });
 
 export const config = {
   port: Number(env.PORT || 3000),
+  host: env.HOST || "0.0.0.0", // 127.0.0.1 = chỉ truy cập được từ trong VPS
   dataDir,
   dbPath: path.join(dataDir, "app.db"),
   imagesDir: path.join(dataDir, "images"),
