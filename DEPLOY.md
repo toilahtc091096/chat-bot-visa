@@ -1,170 +1,188 @@
-# Chạy Sổ lỗi hồ sơ trên VPS (Python + Postgres, không cần Docker)
+# Chạy Sổ lỗi hồ sơ trên VPS Windows
 
-Hướng dẫn cho VPS Ubuntu/Debian đã có Postgres (của dự án lọc hồ sơ). Lấy code bằng `git pull`, chạy bằng systemd.
+Hướng dẫn cho VPS **Windows Server / Windows 10-11** đã có PostgreSQL (của dự án lọc hồ sơ). Mọi lệnh chạy trong **PowerShell** (bấm Start, gõ `PowerShell`, chuột phải → **Run as administrator**).
 
-## 1. Cài gói hệ thống (một lần)
+Muốn thử trên máy cá nhân trước? Xem [LOCAL.md](LOCAL.md).
 
-```bash
-python3 --version          # cần 3.10 trở lên
-sudo apt-get update
-sudo apt-get install -y python3-venv git
+## 1. Cài Python và Git (một lần)
+
+Kiểm tra đã có chưa:
+
+```powershell
+py --version     # cần 3.10 trở lên
+git --version
 ```
+
+Chưa có thì cài:
+
+- **Python**: tải tại https://www.python.org/downloads/windows/ . Lúc cài **tick "Add python.exe to PATH"**.
+- **Git**: tải tại https://git-scm.com/download/win , cài mặc định.
+
+Cài xong **đóng PowerShell và mở lại** rồi kiểm tra lại 2 lệnh trên.
 
 ## 2. Lấy code
 
-```bash
-cd ~
+```powershell
+cd C:\
 git clone https://github.com/toilahtc091096/chat-bot-visa.git
-cd chat-bot-visa
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+cd C:\chat-bot-visa
+py -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
 ```
 
 ## 3. Chuẩn bị Postgres
 
-Khuyên dùng **chung database** với dự án lọc hồ sơ nhưng **user riêng**. Bảng của Sổ lỗi nằm trong schema `so_loi` nên không đụng bảng của dự án kia.
+Tìm `psql.exe` (thường ở `C:\Program Files\PostgreSQL\<phiên bản>\bin\`). Mở psql bằng user `postgres`, vào database của dự án lọc hồ sơ:
 
-```bash
-sudo -u postgres psql -d <ten_database_du_an_kia>
+```powershell
+& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -d <ten_database_du_an_kia>
 ```
+
+(Đổi `16` thành phiên bản trên máy. Nó sẽ hỏi mật khẩu của user `postgres`.)
+
+Trong psql gõ:
 
 ```sql
 CREATE USER so_loi WITH PASSWORD 'mat-khau-manh';
-GRANT CREATE ON DATABASE <ten_database_du_an_kia> TO so_loi;   -- để tạo schema so_loi
+GRANT CREATE ON DATABASE <ten_database_du_an_kia> TO so_loi;
 \q
 ```
 
-Muốn tách hẳn thì tạo database riêng: `CREATE DATABASE so_loi OWNER so_loi;`.
-
-Bảng được tạo tự động ở lần chạy đầu.
+Bảng của Sổ lỗi nằm trong schema `so_loi`, không đụng bảng của dự án kia, và được tạo tự động lần chạy đầu. Muốn tách hẳn thì dùng `CREATE DATABASE so_loi OWNER so_loi;` thay cho dòng `GRANT`.
 
 ## 4. Tạo file `.env`
 
-```bash
-cp .env.example .env
-nano .env
+```powershell
+copy .env.example .env
+notepad .env
 ```
 
-Sửa các dòng:
+Sửa các dòng sau rồi lưu (Ctrl+S):
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
 APP_USERS=lan:MatKhauManh1,minh:MatKhauManh2
 DATABASE_URL=postgresql://so_loi:mat-khau-manh@127.0.0.1:5432/<ten_database>
 HOST=127.0.0.1
-PORT=3000                 # đổi nếu cổng 3000 đã có dự án khác dùng (kiểm tra: ss -ltnp | grep :3000)
-INGEST_TOKEN=             # dán kết quả của: openssl rand -hex 32
+PORT=3000
+INGEST_TOKEN=<chuỗi ngẫu nhiên>
+```
+
+Tạo chuỗi ngẫu nhiên cho `INGEST_TOKEN`:
+
+```powershell
+.venv\Scripts\python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Kiểm tra cổng 3000 còn trống (không in gì là trống; nếu có thì đổi `PORT`):
+
+```powershell
+netstat -ano | findstr :3000
 ```
 
 ## 5. Chạy thử
 
-```bash
-.venv/bin/python run.py
+```powershell
+.venv\Scripts\python run.py
 ```
 
-Thấy `Uvicorn running on http://127.0.0.1:3000` là được. Mở cửa sổ SSH khác và thử (thay `<token>`):
+Thấy `Uvicorn running on http://127.0.0.1:3000` là được. Mở trình duyệt **ngay trên VPS** (qua Remote Desktop) và vào http://127.0.0.1:3000 , đăng nhập bằng tài khoản trong `APP_USERS`.
 
-```bash
-curl -s -X POST http://127.0.0.1:3000/api/ingest \
-  -H "Content-Type: application/json" -H "X-Ingest-Token: <token>" \
-  -d '{"messages":[]}'
-# Đúng: {"received":0,"accepted":0,"added":0,"groupId":""}
+Muốn xem thử với dữ liệu mẫu trước khi nối Zalo, mở thêm một cửa sổ PowerShell:
+
+```powershell
+cd C:\chat-bot-visa
+.venv\Scripts\python -m app.cli demo
+.venv\Scripts\python -m app.cli process --force
 ```
 
-Kiểm tra bảng đã được tạo: `psql "<DATABASE_URL>" -c '\dt so_loi.*'`
+Tải lại trang web, tab **Bảng lỗi** sẽ có các lỗi AI tìm được từ chat mẫu. Xem xong thì xóa dữ liệu mẫu: `.venv\Scripts\python -m app.cli clear-demo`.
 
-Ctrl+C để dừng, chuyển sang chạy nền ở bước 6.
+Ctrl+C ở cửa sổ đang chạy `run.py` để dừng, rồi chuyển sang bước 6.
 
-## 6. Chạy nền bằng systemd
+## 6. Chạy nền, tự khởi động cùng Windows (NSSM)
 
-```bash
-sudo tee /etc/systemd/system/so-loi.service > /dev/null <<UNIT
-[Unit]
-Description=So loi ho so
-After=network.target postgresql.service
+Dùng **NSSM** để biến Sổ lỗi thành một Windows Service.
 
-[Service]
-User=$USER
-WorkingDirectory=$HOME/chat-bot-visa
-ExecStart=$HOME/chat-bot-visa/.venv/bin/python run.py
-Restart=always
-RestartSec=5
+1. Tải NSSM tại https://nssm.cc/download , giải nén, chép `win64\nssm.exe` vào `C:\nssm\nssm.exe`.
+2. Chạy trong PowerShell (administrator):
 
-[Install]
-WantedBy=multi-user.target
-UNIT
+   ```powershell
+   mkdir C:\chat-bot-visa\logs -Force
+   C:\nssm\nssm.exe install SoLoi "C:\chat-bot-visa\.venv\Scripts\python.exe" "run.py"
+   C:\nssm\nssm.exe set SoLoi AppDirectory "C:\chat-bot-visa"
+   C:\nssm\nssm.exe set SoLoi AppStdout "C:\chat-bot-visa\logs\so-loi.log"
+   C:\nssm\nssm.exe set SoLoi AppStderr "C:\chat-bot-visa\logs\so-loi.log"
+   C:\nssm\nssm.exe set SoLoi Start SERVICE_AUTO_START
+   C:\nssm\nssm.exe start SoLoi
+   ```
 
-sudo systemctl daemon-reload
-sudo systemctl enable --now so-loi
-sudo systemctl status so-loi          # phải là active (running)
-journalctl -u so-loi -f               # xem log, Ctrl+C để thoát
+3. Kiểm tra:
+
+   ```powershell
+   Get-Service SoLoi                                       # Status phải là Running
+   Get-Content C:\chat-bot-visa\logs\so-loi.log -Tail 20   # xem log
+   ```
+
+Dự án lọc hồ sơ đang chạy bằng cách khác (Task Scheduler, pm2...)? Dùng cùng cách cũng được; lệnh cần chạy là `C:\chat-bot-visa\.venv\Scripts\python.exe run.py` trong thư mục `C:\chat-bot-visa`.
+
+## 7. Kiểm tra đường nhận tin
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/api/ingest `
+  -Headers @{ "X-Ingest-Token" = "<INGEST_TOKEN>" } `
+  -ContentType "application/json" -Body '{"messages":[]}'
 ```
 
-Dự án kia đang dùng pm2 hoặc supervisor? Dùng cùng công cụ cũng được, ví dụ với pm2:
-`pm2 start run.py --name so-loi --interpreter .venv/bin/python && pm2 save`.
-
-## 7. Mở web từ máy của bạn
-
-Không cần mở cổng ra Internet, dùng đường hầm SSH:
-
-```bash
-ssh -L 3000:127.0.0.1:3000 <user>@<IP VPS>
-```
-
-Giữ cửa sổ đó, vào `http://localhost:3000`, đăng nhập bằng tài khoản trong `APP_USERS`. Tab **Zalo & hệ thống** phải ghi "Nhận tin từ dự án khác" và không có cảnh báo thiếu API key.
+Đúng thì in ra `received 0, accepted 0, added 0`.
 
 ## 8. Nối dự án lọc hồ sơ
 
-Làm theo [INTEGRATION.md](INTEGRATION.md) (thêm 1 dòng vào `onMessage`, gửi lịch sử cũ một lần). Sau đó bấm **Xử lý tin mới ngay** và xem **Bảng lỗi**.
+Làm theo [INTEGRATION.md](INTEGRATION.md): chép `integration\zlapi_forwarder.py` sang dự án kia, đặt `SO_LOI_URL=http://127.0.0.1:3000`, `SO_LOI_TOKEN`, `SO_LOI_GROUP_ID`, thêm 1 dòng vào `onMessage`, gửi lịch sử cũ một lần, rồi khởi động lại dự án kia.
+
+Sau đó vào web, tab **Zalo & hệ thống** sẽ thấy số tin tăng. Bấm **Xử lý tin mới ngay**, rồi xem **Bảng lỗi**.
 
 ## Cập nhật phiên bản mới
 
-```bash
-cd ~/chat-bot-visa
+```powershell
+cd C:\chat-bot-visa
 git pull
-.venv/bin/pip install -r requirements.txt
-sudo systemctl restart so-loi
+.venv\Scripts\pip install -r requirements.txt
+C:\nssm\nssm.exe restart SoLoi
 ```
 
-## Cho cả nhóm truy cập (khi đã chạy ổn)
+## Cho cả nhóm truy cập từ máy khác
 
-Nên có tên miền + HTTPS qua nginx:
+Mặc định (`HOST=127.0.0.1`) chỉ mở được ngay trên VPS. Để 3 đến 5 người dùng từ máy của họ:
 
-```nginx
-server {
-    server_name hoso.congty.vn;
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host $host;
-        client_max_body_size 20m;
-    }
-}
-```
+1. Sửa `.env`: `HOST=0.0.0.0`, rồi `C:\nssm\nssm.exe restart SoLoi`.
+2. Mở cổng trên tường lửa Windows:
 
-Rồi `sudo certbot --nginx -d hoso.congty.vn`. Không có tên miền thì tạm đặt `HOST=0.0.0.0` và mở cổng (`sudo ufw allow 3000`), nhưng mật khẩu sẽ đi qua mạng không mã hóa.
+   ```powershell
+   New-NetFirewallRule -DisplayName "So loi ho so" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
+   ```
+
+3. Mọi người vào `http://<IP VPS>:3000`. Nếu nhà cung cấp VPS có tường lửa riêng trên trang quản lý, mở thêm cổng 3000 ở đó.
+
+Lưu ý: cách này dùng HTTP, mật khẩu không được mã hóa trên đường truyền. Khi dùng lâu dài nên có tên miền + HTTPS (ví dụ Caddy cho Windows hoặc IIS reverse proxy), mình có thể hướng dẫn thêm khi cần.
 
 ## Sao lưu
 
-- Dữ liệu: `pg_dump -n so_loi <ten_database> > so-loi-$(date +%F).sql`
-- Ảnh: thư mục `~/chat-bot-visa/data/images/`
+```powershell
+& "C:\Program Files\PostgreSQL\16\bin\pg_dump.exe" -U postgres -n so_loi <ten_database> -f C:\backup\so-loi-$(Get-Date -Format yyyy-MM-dd).sql
+```
+
+Và chép thư mục ảnh `C:\chat-bot-visa\data\images`.
 
 ## Lỗi hay gặp
 
 | Hiện tượng | Cách xử lý |
 |---|---|
-| `permission denied for database` khi khởi động | Chưa `GRANT CREATE ON DATABASE ... TO so_loi` (bước 3) |
-| `connection refused` tới Postgres | Sai host/cổng trong `DATABASE_URL`, kiểm tra `sudo ss -ltnp \| grep 5432` |
-| `address already in use` | Cổng đã có dự án khác dùng, đổi `PORT` (và `SO_LOI_URL` bên dự án kia) |
+| `py` / `python` không nhận | Cài lại Python và tick "Add python.exe to PATH", rồi mở lại PowerShell |
+| `pip install` lỗi | Kiểm tra `py --version` là 3.10 trở lên; thử `.venv\Scripts\python -m pip install --upgrade pip` rồi cài lại |
+| `PoolTimeout` / `connection refused` | Postgres chưa chạy (`Get-Service postgresql*`) hoặc sai mật khẩu/cổng trong `DATABASE_URL` |
+| `permission denied for database` | Chưa chạy lệnh `GRANT CREATE ...` ở bước 3 |
+| `address already in use` / `[WinError 10048]` | Cổng đã bị chiếm, đổi `PORT` (và `SO_LOI_URL` bên dự án kia) |
+| Service SoLoi dừng liên tục | Xem `C:\chat-bot-visa\logs\so-loi.log` |
 | Dự án kia log `[so-loi] Chưa gửi được ... 401` | `SO_LOI_TOKEN` không giống `INGEST_TOKEN` |
-| Dự án kia log `Connection refused` | Sổ lỗi chưa chạy (`systemctl status so-loi`) hoặc sai `SO_LOI_URL` |
-| Web báo "Chưa cấu hình ANTHROPIC_API_KEY" | Thêm key vào `.env` rồi `sudo systemctl restart so-loi` |
-
-## Muốn dùng Docker?
-
-```bash
-cp .env.example .env && nano .env    # như bước 4, nhưng DATABASE_URL dùng host.docker.internal thay cho 127.0.0.1
-docker compose up -d --build
-docker compose logs -f app
-```
-
-Khi đó Postgres phải cho phép kết nối từ mạng Docker (`listen_addresses` và `pg_hba.conf`), nên cách chạy trực tiếp ở trên đơn giản hơn.
+| Web báo "Chưa cấu hình ANTHROPIC_API_KEY" | Thêm key vào `.env` rồi `C:\nssm\nssm.exe restart SoLoi` |
