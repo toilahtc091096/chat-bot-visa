@@ -87,21 +87,16 @@
     <section class="card">
       <h2>Kết nối Zalo</h2>
       <p>Trạng thái: <b id="zalo-status"></b> <span id="zalo-detail" class="muted"></span></p>
-      <button id="btn-qr">Đăng nhập bằng QR</button>
-      <div id="qr-box" class="hidden"><img id="qr-img" alt="QR đăng nhập Zalo" /></div>
+      <p class="muted small">Tài khoản Zalo đăng nhập ở dự án lọc hồ sơ; dự án đó chuyển tin của nhóm sang đây (xem INTEGRATION.md).</p>
     </section>
     <section class="card">
       <h2>Nhóm theo dõi</h2>
       <p>Nhóm hiện tại: <b id="group-name">(chưa chọn)</b></p>
-      <button id="btn-groups">Chọn nhóm</button>
-      <select id="group-select" class="hidden"></select>
-      <button id="btn-save-group" class="hidden">Lưu nhóm</button>
       <p id="msg-stats" class="muted"></p>
     </section>
     <section class="card">
-      <h2>Lấy lịch sử và xử lý</h2>
-      <label>Số ngày lịch sử cần lấy: <input id="backfill-days" type="number" value="30" min="1" max="365" style="width:5em" /></label>
-      <button id="btn-backfill">Lấy lịch sử</button>
+      <h2>Xử lý</h2>
+      <p class="muted small">Hệ thống tự xử lý tin mới theo lịch. Bấm nút để xử lý ngay (kể cả tin vừa đến).</p>
       <button id="btn-process">Xử lý tin mới ngay</button>
       <pre id="jobs" class="muted"></pre>
     </section>

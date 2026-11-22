@@ -267,30 +267,24 @@ $("#img-method").addEventListener("change", loadImages);
 loaders.images = () => Promise.all([loadCategories(), loadImages()]);
 
 // ================= HỆ THỐNG =================
-const ZALO_LABEL = { external: "Nhận tin từ dự án khác", disconnected: "Chưa đăng nhập", waiting_qr: "Chờ quét QR", scanned: "Đã quét, chờ xác nhận", connected: "Đã kết nối", error: "Lỗi" };
+const ZALO_LABEL = { external: "Nhận tin từ dự án khác" };
 const PRICE = { "claude-haiku-5-5": [0.1, 0.5], "claude-sonnet-5-5": [2, 10], "claude-opus-5-5": [4, 20] }; // USD / 1 triệu token
 
 let statusTimer;
 async function loadStatus() {
   const s = await api("/api/status");
   $("#who").textContent = s.user;
-  $("#zalo-status").textContent = ZALO_LABEL[s.zalo.status] + (s.zalo.account ? ` (${s.zalo.account})` : "") + (s.zalo.listening ? " · đang nghe tin mới" : "");
-  $("#zalo-detail").textContent = s.zaloMode === "external"
-    ? (s.zalo.lastIngestAt ? `Lần nhận tin gần nhất: ${fmtTime(s.zalo.lastIngestAt)}` : "Chưa nhận tin nào. Xem INTEGRATION.md để nối dự án kia.")
-    : s.zalo.detail || "";
-  document.querySelectorAll("#btn-qr, #btn-groups, #btn-backfill").forEach((b) => b.classList.toggle("hidden", s.zaloMode === "external"));
-  const showQr = s.zalo.status === "waiting_qr";
-  $("#qr-box").classList.toggle("hidden", !showQr);
-  if (showQr) $("#qr-img").src = "/api/zalo/qr.png?t=" + Date.now();
+  $("#zalo-status").textContent = ZALO_LABEL[s.zalo.status] || s.zalo.status;
+  $("#zalo-detail").textContent = s.zalo.lastIngestAt
+    ? `Lần nhận tin gần nhất: ${fmtTime(s.zalo.lastIngestAt)}`
+    : "Chưa nhận tin nào từ lúc khởi động. Xem INTEGRATION.md để nối dự án kia.";
   $("#group-name").textContent = s.groupName || s.groupId || "(chưa chọn)";
   $("#msg-stats").textContent = s.messages
     ? `${s.messages.n} tin nhắn đã lưu${s.messages.n ? `, từ ${fmtTime(s.messages.min_ts)} đến ${fmtTime(s.messages.max_ts)}` : ""}. Chờ xử lý: ${s.pendingMessages} tin, ${s.pendingImages} ảnh.`
     : "";
-  const b = s.backfill;
   const p = s.pipeline;
   $("#jobs").textContent = [
     !s.hasApiKey && "⚠️ Chưa cấu hình ANTHROPIC_API_KEY",
-    b.running ? `Đang lấy lịch sử: ${b.pages} trang, +${b.added} tin (cũ nhất ${fmtTime(b.oldestTs)})` : b.pages ? `Lấy lịch sử xong: +${b.added} tin${b.error ? " · lỗi: " + b.error : ""}` : "",
     p.running ? "Đang phân loại ảnh và trích xuất lỗi..." : p.lastRun ? `Xử lý lần cuối: ${fmtTime(p.lastRun)}${p.error ? " · lỗi: " + p.error : ""}` : "",
     "Lỗi: " + (s.errors.map((e) => `${STATUS_LABEL[e.status]} ${e.n}`).join(", ") || "chưa có"),
   ]
@@ -307,35 +301,9 @@ async function loadStatus() {
       })
       .join("") + `<div><b>Tổng ≈ $${total.toFixed(3)}</b> <span class="muted small">(ước tính, chưa trừ giảm giá cache)</span></div>`;
   clearTimeout(statusTimer);
-  if (!$("#tab-system").classList.contains("hidden")) statusTimer = setTimeout(loadStatus, b.running || p.running || s.zalo.status !== "connected" ? 3000 : 15000);
+  if (!$("#tab-system").classList.contains("hidden")) statusTimer = setTimeout(loadStatus, p.running ? 3000 : 15000);
 }
 
-$("#btn-qr").addEventListener("click", async () => {
-  await api("/api/zalo/login-qr", { method: "POST" });
-  setTimeout(loadStatus, 1500);
-});
-$("#btn-groups").addEventListener("click", async () => {
-  try {
-    const groups = await api("/api/zalo/groups");
-    $("#group-select").innerHTML = groups.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}${g.members ? ` (${g.members} người)` : ""}</option>`).join("");
-    $("#group-select").classList.remove("hidden");
-    $("#btn-save-group").classList.remove("hidden");
-  } catch (err) {
-    alert(err.message);
-  }
-});
-$("#btn-save-group").addEventListener("click", async () => {
-  const sel = $("#group-select");
-  await api("/api/zalo/group", { method: "POST", body: { id: sel.value, name: sel.selectedOptions[0].textContent } });
-  sel.classList.add("hidden");
-  $("#btn-save-group").classList.add("hidden");
-  loadStatus();
-});
-$("#btn-backfill").addEventListener("click", async () => {
-  if (!confirm("Lấy lịch sử nhóm rồi cho AI xử lý? Việc này tốn token cho lần chạy đầu.")) return;
-  await api("/api/zalo/backfill", { method: "POST", body: { days: Number($("#backfill-days").value) } });
-  setTimeout(loadStatus, 1000);
-});
 $("#btn-process").addEventListener("click", async () => {
   await api("/api/pipeline/run", { method: "POST", body: { force: true } });
   setTimeout(loadStatus, 1000);

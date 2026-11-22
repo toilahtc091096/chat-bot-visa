@@ -1,16 +1,13 @@
-# Chạy Sổ lỗi hồ sơ trên VPS (không dùng Docker)
+# Chạy Sổ lỗi hồ sơ trên VPS (Python + Postgres, không cần Docker)
 
-Hướng dẫn cho VPS Ubuntu/Debian, chạy bằng Node.js + pm2, lấy code bằng `git pull`.
-Giả sử tài khoản Zalo **đang đăng nhập ở dự án lọc hồ sơ**, nên Sổ lỗi chạy ở chế độ `external` (xem [INTEGRATION.md](INTEGRATION.md)).
+Hướng dẫn cho VPS Ubuntu/Debian đã có Postgres (của dự án lọc hồ sơ). Lấy code bằng `git pull`, chạy bằng systemd.
 
-## 1. Cài Node.js 22 và pm2 (một lần)
+## 1. Cài gói hệ thống (một lần)
 
 ```bash
-node -v   # nếu đã có v22 trở lên thì bỏ qua 2 lệnh dưới
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs git build-essential python3
-
-sudo npm install -g pm2   # nếu dự án kia đã dùng pm2 thì bỏ qua
+python3 --version          # cần 3.10 trở lên
+sudo apt-get update
+sudo apt-get install -y python3-venv git
 ```
 
 ## 2. Lấy code
@@ -19,53 +16,53 @@ sudo npm install -g pm2   # nếu dự án kia đã dùng pm2 thì bỏ qua
 cd ~
 git clone https://github.com/toilahtc091096/chat-bot-visa.git
 cd chat-bot-visa
-npm ci --omit=dev
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
 
-> Nếu code chưa có trên GitHub, dùng file `chat-bot-visa.bundle` (bản đóng gói của git): chép lên VPS bằng
-> `scp chat-bot-visa.bundle <user>@<IP VPS>:~/` rồi chạy
-> `git clone -b feat/mvp ~/chat-bot-visa.bundle ~/chat-bot-visa && cd ~/chat-bot-visa && npm ci --omit=dev`.
-> Khi code đã lên GitHub: `git remote set-url origin https://github.com/toilahtc091096/chat-bot-visa.git && git pull origin main`.
+## 3. Chuẩn bị Postgres
 
-## 3. Tạo file `.env`
+Khuyên dùng **chung database** với dự án lọc hồ sơ nhưng **user riêng**. Bảng của Sổ lỗi nằm trong schema `so_loi` nên không đụng bảng của dự án kia.
+
+```bash
+sudo -u postgres psql -d <ten_database_du_an_kia>
+```
+
+```sql
+CREATE USER so_loi WITH PASSWORD 'mat-khau-manh';
+GRANT CREATE ON DATABASE <ten_database_du_an_kia> TO so_loi;   -- để tạo schema so_loi
+\q
+```
+
+Muốn tách hẳn thì tạo database riêng: `CREATE DATABASE so_loi OWNER so_loi;`.
+
+Bảng được tạo tự động ở lần chạy đầu.
+
+## 4. Tạo file `.env`
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Sửa các dòng sau (các dòng khác để mặc định):
+Sửa các dòng:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
 APP_USERS=lan:MatKhauManh1,minh:MatKhauManh2
-PORT=3000                 # đổi nếu cổng 3000 đã có dự án khác dùng
-HOST=127.0.0.1            # chỉ mở trong VPS
-ZALO_MODE=external
+DATABASE_URL=postgresql://so_loi:mat-khau-manh@127.0.0.1:5432/<ten_database>
+HOST=127.0.0.1
+PORT=3000                 # đổi nếu cổng 3000 đã có dự án khác dùng (kiểm tra: ss -ltnp | grep :3000)
 INGEST_TOKEN=             # dán kết quả của: openssl rand -hex 32
 ```
 
-Kiểm tra cổng còn trống: `ss -ltnp | grep :3000` (không in gì là trống).
-
-## 4. Chạy bằng pm2
+## 5. Chạy thử
 
 ```bash
-pm2 start src/index.js --name so-loi
-pm2 logs so-loi --lines 20      # Ctrl+C để thoát
-pm2 save                        # tự chạy lại khi VPS khởi động lại
-pm2 startup                     # chỉ cần nếu pm2 chưa được cài tự khởi động; làm theo lệnh nó in ra
+.venv/bin/python run.py
 ```
 
-Log đúng sẽ có:
-
-```
-[zalo] Chế độ external: nhận tin từ dự án khác qua POST /api/ingest
-[web] Đang chạy tại http://127.0.0.1:3000
-```
-
-## 5. Kiểm tra
-
-**Trên VPS**, thử gửi tin rỗng (thay `<token>` bằng INGEST_TOKEN):
+Thấy `Uvicorn running on http://127.0.0.1:3000` là được. Mở cửa sổ SSH khác và thử (thay `<token>`):
 
 ```bash
 curl -s -X POST http://127.0.0.1:3000/api/ingest \
@@ -74,32 +71,64 @@ curl -s -X POST http://127.0.0.1:3000/api/ingest \
 # Đúng: {"received":0,"accepted":0,"added":0,"groupId":""}
 ```
 
-**Mở web từ máy tính của bạn** (không cần mở cổng ra Internet), dùng đường hầm SSH:
+Kiểm tra bảng đã được tạo: `psql "<DATABASE_URL>" -c '\dt so_loi.*'`
+
+Ctrl+C để dừng, chuyển sang chạy nền ở bước 6.
+
+## 6. Chạy nền bằng systemd
+
+```bash
+sudo tee /etc/systemd/system/so-loi.service > /dev/null <<UNIT
+[Unit]
+Description=So loi ho so
+After=network.target postgresql.service
+
+[Service]
+User=$USER
+WorkingDirectory=$HOME/chat-bot-visa
+ExecStart=$HOME/chat-bot-visa/.venv/bin/python run.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now so-loi
+sudo systemctl status so-loi          # phải là active (running)
+journalctl -u so-loi -f               # xem log, Ctrl+C để thoát
+```
+
+Dự án kia đang dùng pm2 hoặc supervisor? Dùng cùng công cụ cũng được, ví dụ với pm2:
+`pm2 start run.py --name so-loi --interpreter .venv/bin/python && pm2 save`.
+
+## 7. Mở web từ máy của bạn
+
+Không cần mở cổng ra Internet, dùng đường hầm SSH:
 
 ```bash
 ssh -L 3000:127.0.0.1:3000 <user>@<IP VPS>
 ```
 
-Giữ cửa sổ đó mở, rồi vào `http://localhost:3000` trên trình duyệt, đăng nhập bằng tài khoản trong `APP_USERS`. Tab **Zalo & hệ thống** phải ghi "Nhận tin từ dự án khác" và không có cảnh báo thiếu API key.
+Giữ cửa sổ đó, vào `http://localhost:3000`, đăng nhập bằng tài khoản trong `APP_USERS`. Tab **Zalo & hệ thống** phải ghi "Nhận tin từ dự án khác" và không có cảnh báo thiếu API key.
 
-## 6. Nối dự án lọc hồ sơ
+## 8. Nối dự án lọc hồ sơ
 
-Làm bước 2 và 3 trong [INTEGRATION.md](INTEGRATION.md): chép `integration/zalo-forwarder.js` sang dự án kia, đặt `SO_LOI_URL=http://127.0.0.1:3000`, `SO_LOI_TOKEN`, `SO_LOI_GROUP_ID`, thêm dòng `forwardToSoLoi(message)`, chạy `backfillToSoLoi(api, 30)` một lần, rồi `pm2 restart <tên dự án kia>`.
+Làm theo [INTEGRATION.md](INTEGRATION.md) (thêm 1 dòng vào `onMessage`, gửi lịch sử cũ một lần). Sau đó bấm **Xử lý tin mới ngay** và xem **Bảng lỗi**.
 
-Sau đó trên web Sổ lỗi, tab **Zalo & hệ thống**: số tin đã lưu phải tăng. Bấm **Xử lý tin mới ngay**, đợi vài phút rồi xem tab **Bảng lỗi** và **Ảnh**.
-
-## 7. Cập nhật phiên bản mới
+## Cập nhật phiên bản mới
 
 ```bash
 cd ~/chat-bot-visa
 git pull
-npm ci --omit=dev
-pm2 restart so-loi
+.venv/bin/pip install -r requirements.txt
+sudo systemctl restart so-loi
 ```
 
-## 8. Cho cả nhóm truy cập (khi đã chạy ổn)
+## Cho cả nhóm truy cập (khi đã chạy ổn)
 
-Đường hầm SSH chỉ hợp để kiểm tra. Để 3 đến 5 người dùng hằng ngày, nên có tên miền và HTTPS. Nếu VPS đã có nginx:
+Nên có tên miền + HTTPS qua nginx:
 
 ```nginx
 server {
@@ -112,37 +141,30 @@ server {
 }
 ```
 
-Rồi cấp HTTPS miễn phí: `sudo certbot --nginx -d hoso.congty.vn`.
-
-Không có tên miền thì có thể đặt `HOST=0.0.0.0` và mở cổng (`sudo ufw allow 3000`), nhưng khi đó mật khẩu đi qua mạng không mã hóa, chỉ nên dùng tạm.
+Rồi `sudo certbot --nginx -d hoso.congty.vn`. Không có tên miền thì tạm đặt `HOST=0.0.0.0` và mở cổng (`sudo ufw allow 3000`), nhưng mật khẩu sẽ đi qua mạng không mã hóa.
 
 ## Sao lưu
 
-Toàn bộ dữ liệu nằm trong `~/chat-bot-visa/data/`. Sao lưu định kỳ, ví dụ:
-
-```bash
-tar czf ~/so-loi-backup-$(date +%F).tgz -C ~/chat-bot-visa data
-```
+- Dữ liệu: `pg_dump -n so_loi <ten_database> > so-loi-$(date +%F).sql`
+- Ảnh: thư mục `~/chat-bot-visa/data/images/`
 
 ## Lỗi hay gặp
 
 | Hiện tượng | Cách xử lý |
 |---|---|
-| `npm ci` lỗi khi build `better-sqlite3` hoặc `sharp` | Cài `build-essential python3`, kiểm tra `node -v` là 22 trở lên |
-| `EADDRINUSE` trong log | Cổng đã có dự án khác dùng, đổi `PORT` trong `.env` (và `SO_LOI_URL` bên dự án kia) |
-| Dự án kia log `Sổ lỗi trả về HTTP 401` | `SO_LOI_TOKEN` không giống `INGEST_TOKEN` |
-| Dự án kia log `fetch failed` | Sổ lỗi chưa chạy (`pm2 status`) hoặc sai `SO_LOI_URL` |
-| Web báo "Chưa cấu hình ANTHROPIC_API_KEY" | Thêm key vào `.env` rồi `pm2 restart so-loi --update-env` |
+| `permission denied for database` khi khởi động | Chưa `GRANT CREATE ON DATABASE ... TO so_loi` (bước 3) |
+| `connection refused` tới Postgres | Sai host/cổng trong `DATABASE_URL`, kiểm tra `sudo ss -ltnp \| grep 5432` |
+| `address already in use` | Cổng đã có dự án khác dùng, đổi `PORT` (và `SO_LOI_URL` bên dự án kia) |
+| Dự án kia log `[so-loi] Chưa gửi được ... 401` | `SO_LOI_TOKEN` không giống `INGEST_TOKEN` |
+| Dự án kia log `Connection refused` | Sổ lỗi chưa chạy (`systemctl status so-loi`) hoặc sai `SO_LOI_URL` |
+| Web báo "Chưa cấu hình ANTHROPIC_API_KEY" | Thêm key vào `.env` rồi `sudo systemctl restart so-loi` |
 
----
-
-## Muốn dùng Docker thay pm2?
+## Muốn dùng Docker?
 
 ```bash
-curl -fsSL https://get.docker.com | sh
-cd ~/chat-bot-visa && cp .env.example .env && nano .env   # như bước 3
-docker compose up -d --build app      # chỉ chạy app, bỏ Caddy nếu VPS đã có nginx
+cp .env.example .env && nano .env    # như bước 4, nhưng DATABASE_URL dùng host.docker.internal thay cho 127.0.0.1
+docker compose up -d --build
 docker compose logs -f app
 ```
 
-Lưu ý khi dùng Docker: dự án kia (chạy ngoài Docker) vẫn gọi `http://127.0.0.1:3000` được vì cổng đã được mở trên 127.0.0.1. Nếu muốn có cả HTTPS tự động bằng Caddy thì đặt `DOMAIN` trong `.env` và chạy `docker compose up -d --build` (cần cổng 80/443 còn trống).
+Khi đó Postgres phải cho phép kết nối từ mạng Docker (`listen_addresses` và `pg_hba.conf`), nên cách chạy trực tiếp ở trên đơn giản hơn.

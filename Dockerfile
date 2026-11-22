@@ -1,11 +1,12 @@
-FROM node:22-bookworm-slim
+FROM python:3.12-slim
 WORKDIR /app
-ENV NODE_ENV=production
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-COPY src ./src
+ENV PYTHONUNBUFFERED=1
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app ./app
 COPY public ./public
-ENV DATA_DIR=/app/data
+COPY run.py ./
+ENV DATA_DIR=/app/data HOST=0.0.0.0
 VOLUME ["/app/data"]
 EXPOSE 3000
-CMD ["node", "src/index.js"]
+CMD ["python", "run.py"]

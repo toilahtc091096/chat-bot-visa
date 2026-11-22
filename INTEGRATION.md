@@ -1,110 +1,90 @@
-# Nối Sổ lỗi hồ sơ với dự án đang đăng nhập Zalo
+# Nối Sổ lỗi hồ sơ với dự án lọc hồ sơ (Python + zlapi)
 
 ## Vì sao cần
 
-Mỗi tài khoản Zalo chỉ giữ được **một kết nối nghe tin (listener)** tại một thời điểm. Nếu Sổ lỗi cũng đăng nhập cùng tài khoản đó, hai bên sẽ đá nhau ra liên tục (lỗi `3000 DuplicateConnection`).
-
-Vì vậy, khi tài khoản Zalo đã được dự án khác (dự án lọc hồ sơ) dùng để nghe tin:
-
-- **Dự án kia** vẫn giữ đăng nhập Zalo như hiện tại, chỉ thêm vài dòng để **chuyển tin** của nhóm "Xử lý hồ sơ lỗi" sang Sổ lỗi.
-- **Sổ lỗi** chạy ở chế độ `external`: không đăng nhập Zalo, chỉ nhận tin qua `POST /api/ingest`, rồi phân loại ảnh, trích xuất lỗi, hiện bảng lỗi và chatbot như bình thường.
+Mỗi tài khoản Zalo chỉ giữ được **một kết nối nghe tin** tại một thời điểm. Tài khoản phụ đang đăng nhập ở dự án lọc hồ sơ, nên Sổ lỗi **không đăng nhập Zalo**. Thay vào đó, dự án kia chuyển tin của nhóm "Xử lý hồ sơ lỗi" sang:
 
 ```
-Zalo ──► Dự án lọc hồ sơ (listener sẵn có) ──► POST /api/ingest ──► Sổ lỗi hồ sơ (web + AI)
-                     └─ xử lý hồ sơ như cũ
+Zalo ──► Dự án lọc hồ sơ (zlapi, onMessage sẵn có) ──► POST /api/ingest ──► Sổ lỗi hồ sơ (FastAPI + AI)
+                     └─ lọc hồ sơ như cũ                                         └─ Postgres, schema so_loi
 ```
 
-Cách này không phải trộn code hai dự án vào nhau: mỗi bên cập nhật, khởi động lại, hay hỏng đều không kéo bên kia theo.
+Hai dự án chạy riêng (cập nhật, khởi động lại, hay lỗi bên này không kéo bên kia), nhưng có thể dùng **chung một Postgres**: bảng của Sổ lỗi nằm trong schema `so_loi`, nên kiểm tra bằng cùng công cụ, cùng kết nối được.
 
-## Bước 1: chạy Sổ lỗi ở chế độ external
+## Bước 1: chạy Sổ lỗi
 
-Làm theo phần "Cài lên VPS" trong [README.md](README.md). Trong file `.env`, thêm:
-
-```bash
-ZALO_MODE=external
-INGEST_TOKEN=<chuỗi ngẫu nhiên>   # tạo bằng: openssl rand -hex 32
-```
-
-Rồi chạy `docker compose up -d --build`. Trang **Zalo & hệ thống** sẽ ghi "Nhận tin từ dự án khác".
-
-Kiểm tra nhanh trên VPS (thay `<token>`):
-
-```bash
-curl -s -X POST http://127.0.0.1:3000/api/ingest \
-  -H "Content-Type: application/json" -H "X-Ingest-Token: <token>" \
-  -d '{"messages":[]}'
-# Kết quả mong đợi: {"received":0,"accepted":0,"added":0,"groupId":""}
-```
+Làm theo [DEPLOY.md](DEPLOY.md). Ghi lại `INGEST_TOKEN` đã đặt trong `.env`.
 
 ## Bước 2: lấy id nhóm Zalo
 
-Trong dự án kia, in id nhóm ra một lần, ví dụ thêm tạm vào listener:
+Trong `onMessage` của dự án kia, in tạm ra:
 
-```js
-listener.on("message", (m) => console.log(m.threadId, m.data.dName, m.data.content));
+```python
+print(thread_id, thread_type, message)
 ```
 
-Gửi một tin vào nhóm "Xử lý hồ sơ lỗi" và ghi lại `threadId` in ra. Đó là `SO_LOI_GROUP_ID`.
+Gửi một tin vào nhóm "Xử lý hồ sơ lỗi", ghi lại `thread_id` in ra. Đó là `SO_LOI_GROUP_ID`. Xong thì xóa dòng in.
 
 ## Bước 3: thêm bộ chuyển tin vào dự án kia
 
-> Hướng dẫn này dành cho dự án dùng **zca-js** (Node.js). Nếu dự án kia dùng thư viện khác (ví dụ zlapi của Python), xem mục "Dự án dùng ngôn ngữ khác" ở cuối.
-
-1. Chép file [`integration/zalo-forwarder.js`](integration/zalo-forwarder.js) vào dự án kia.
-2. Thêm biến môi trường cho dự án kia:
+1. Chép file [`integration/zlapi_forwarder.py`](integration/zlapi_forwarder.py) vào cạnh file bot của dự án kia. File chỉ dùng thư viện chuẩn, không cần cài thêm gì.
+2. Thêm biến môi trường cho dự án kia (file `.env` hoặc cấu hình service):
 
    ```bash
-   SO_LOI_URL=http://127.0.0.1:3000   # xem ghi chú mạng bên dưới
+   SO_LOI_URL=http://127.0.0.1:3000
    SO_LOI_TOKEN=<giống INGEST_TOKEN>
    SO_LOI_GROUP_ID=<id nhóm ở bước 2>
    ```
 
-3. Ở chỗ dự án kia đang nghe tin, thêm **một dòng** (giữ nguyên xử lý cũ):
+   Nếu dự án kia đọc `.env` bằng python-dotenv thì phải `load_dotenv()` **trước** dòng `import zlapi_forwarder`.
 
-   ```js
-   import { forwardToSoLoi } from "./zalo-forwarder.js";
+3. Trong `onMessage`, thêm **một dòng** (giữ nguyên code lọc hồ sơ):
 
-   api.listener.on("message", (message) => {
-     forwardToSoLoi(message);   // ← thêm dòng này
-     // ... code lọc hồ sơ hiện có giữ nguyên ...
-   });
+   ```python
+   from zlapi_forwarder import forward_to_so_loi
+
+   class Bot(ZaloAPI):
+       def onMessage(self, mid, author_id, message, message_object, thread_id, thread_type):
+           forward_to_so_loi(message_object, thread_id)   # ← thêm dòng này
+           # ... code lọc hồ sơ hiện có giữ nguyên ...
    ```
 
-   Hàm này chỉ chuyển tin của đúng nhóm `SO_LOI_GROUP_ID`, gửi theo lô mỗi 5 giây, và tự thử lại nếu Sổ lỗi đang tắt. Nó không chặn hay làm chậm code hiện có.
+   Hàm chỉ chuyển tin của đúng nhóm `SO_LOI_GROUP_ID`, gửi theo lô mỗi 5 giây ở luồng riêng, tự thử lại nếu Sổ lỗi đang tắt. Không chặn và không làm chậm code hiện có.
 
-4. Gửi lịch sử cũ **một lần** (ví dụ 30 ngày), dùng luôn `api` đã đăng nhập, không cần quét QR lại:
+4. Gửi lịch sử cũ **một lần**, dùng luôn phiên đăng nhập của bot (không quét QR lại). Ví dụ thêm tạm sau khi bot đăng nhập, trước `bot.listen()`:
 
-   ```js
-   import { backfillToSoLoi } from "./zalo-forwarder.js";
+   ```python
+   from zlapi_forwarder import backfill_to_so_loi
 
-   // chạy 1 lần sau khi đăng nhập xong, rồi có thể xóa dòng này
-   backfillToSoLoi(api, 30).then((n) => console.log("Đã gửi lịch sử:", n, "tin"));
+   print("Đã gửi lịch sử:", backfill_to_so_loi(bot, days=30), "tin")
    ```
 
-   Gửi trùng không sao, Sổ lỗi tự bỏ tin đã có.
+   Chạy xong thì xóa dòng này. Gửi trùng không sao, Sổ lỗi tự bỏ tin đã có. Hàm nghỉ 2 giây giữa mỗi trang 50 tin.
 
 5. Khởi động lại dự án kia.
 
-## Bước 4: xử lý và kiểm tra
+> Dự án kia dùng bản async của zlapi (`zlapi.Async`)? `forward_to_so_loi` vẫn dùng được nguyên như trên. Riêng `backfill_to_so_loi` viết cho bản thường; báo lại để chỉnh nếu cần.
 
-Mở Sổ lỗi, vào **Zalo & hệ thống**. Bạn sẽ thấy số tin đã lưu và "Lần nhận tin gần nhất". Bấm **Xử lý tin mới ngay** để AI phân loại ảnh và trích xuất lỗi lần đầu. Sau đó hệ thống tự xử lý mỗi 30 phút.
+## Bước 4: kiểm tra
 
-## Ghi chú mạng (SO_LOI_URL)
+- Log dự án kia không có dòng `[so-loi] Chưa gửi được`.
+- Web Sổ lỗi, tab **Zalo & hệ thống**: số tin đã lưu tăng, có "Lần nhận tin gần nhất".
+- Hoặc kiểm tra thẳng trong Postgres:
 
-| Dự án kia chạy ở đâu | SO_LOI_URL |
-|---|---|
-| Cùng VPS, chạy trực tiếp (node/pm2) | `http://127.0.0.1:3000` |
-| Cùng VPS, chạy trong Docker | `http://host.docker.internal:3000` và thêm `extra_hosts: ["host.docker.internal:host-gateway"]` vào service của dự án kia. Đồng thời đổi cổng của Sổ lỗi trong `docker-compose.yml` từ `127.0.0.1:3000:3000` thành `172.17.0.1:3000:3000`. |
-| Máy khác | `https://<tên miền của Sổ lỗi>` (đi qua HTTPS của Caddy) |
+  ```sql
+  SELECT COUNT(*), to_timestamp(MAX(ts)/1000) FROM so_loi.messages;
+  ```
 
-## Dự án dùng ngôn ngữ khác
+Bấm **Xử lý tin mới ngay** để AI phân loại ảnh và trích xuất lỗi lần đầu, rồi xem tab **Bảng lỗi** và **Ảnh**. Sau đó hệ thống tự xử lý mỗi 30 phút.
 
-Chỉ cần gửi HTTP:
+## Gửi từ chỗ khác
+
+API chỉ cần HTTP:
 
 ```
 POST <SO_LOI_URL>/api/ingest
 Header: X-Ingest-Token: <INGEST_TOKEN>
-Body:   { "messages": [ { "threadId": "<id nhóm>", "data": { ...tin nhắn gốc... } } ] }
+Body:   { "messages": [ { "threadId": "<id nhóm>", "data": { ...message_object của zlapi... } } ] }
 ```
 
-`data` cần có tối thiểu: `msgId`, `ts` (mili giây), `uidFrom`, `dName` (tên người gửi), `msgType` (`webchat` cho chữ, `chat.photo` cho ảnh), `content` (chuỗi với tin chữ; với ảnh là object có `href`, `thumb`, `title`). Có thể kèm `quote` (`{ globalMsgId, msg }`) nếu là tin trả lời.
+`data` cần tối thiểu: `msgId`, `ts` (mili giây), `uidFrom`, `dName`, `msgType` (`webchat` cho chữ, `chat.photo` cho ảnh), `content` (chuỗi với tin chữ; với ảnh là object có `href`, `thumb`, `title`), và `quote` nếu là tin trả lời.

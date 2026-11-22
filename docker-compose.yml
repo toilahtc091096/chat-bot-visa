@@ -1,3 +1,5 @@
+# Chạy bằng Docker (không bắt buộc, xem DEPLOY.md cho cách chạy trực tiếp).
+# DATABASE_URL trong .env trỏ tới Postgres có sẵn trên VPS: dùng host.docker.internal thay cho 127.0.0.1.
 services:
   app:
     build: .
@@ -5,26 +7,11 @@ services:
     env_file: .env
     environment:
       DATA_DIR: /app/data
-      HOST: 0.0.0.0   # trong container phải mở 0.0.0.0; bên ngoài chỉ mở 127.0.0.1 (xem ports)
+      HOST: 0.0.0.0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/data
     ports:
-      - "127.0.0.1:3000:3000"   # chỉ mở trong máy; truy cập từ ngoài qua Caddy (HTTPS)
+      - "127.0.0.1:3000:3000"
     mem_limit: 1g
-
-  # HTTPS tự động. Cần DOMAIN trong .env trỏ về IP của VPS.
-  caddy:
-    image: caddy:2.10
-    restart: unless-stopped
-    env_file: .env
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-    depends_on:
-      - app
-
-volumes:
-  caddy_data:
