@@ -151,20 +151,132 @@ git pull
 C:\nssm\nssm.exe restart SoLoi
 ```
 
-## Cho cả nhóm truy cập từ máy khác
+## Cho cả nhóm truy cập từ bên ngoài
 
-Mặc định (`HOST=127.0.0.1`) chỉ mở được ngay trên VPS. Để 3 đến 5 người dùng từ máy của họ:
+Mặc định (`HOST=127.0.0.1`) chỉ mở được ngay trên VPS. Có 2 cách cho mọi người dùng từ máy của họ:
+
+| | Cách A: tên miền + HTTPS (khuyên dùng) | Cách B: IP + HTTP (thử nhanh) |
+|---|---|---|
+| Địa chỉ | `https://soloi.tenmien.vn` | `http://<IP VPS>:3000` |
+| Mật khẩu trên đường truyền | Mã hóa | **Không mã hóa**, ai nghe lén mạng (wifi quán cà phê...) đều đọc được |
+| Cần | Một tên miền (hoặc tên miền miễn phí DuckDNS) | Không cần gì |
+
+Web đăng nhập kiểu HTTP Basic: trình duyệt gửi kèm tài khoản/mật khẩu **trong mọi request**, nên dùng lâu dài thì nên làm cách A.
+
+### Cách A: tên miền + HTTPS bằng Caddy
+
+Caddy đứng trước Sổ lỗi, nhận kết nối HTTPS ở cổng 443 rồi chuyển vào `127.0.0.1:3000`. Caddy tự xin và tự gia hạn chứng chỉ Let's Encrypt (miễn phí). Sổ lỗi vẫn giữ `HOST=127.0.0.1`, cổng 3000 không mở ra ngoài.
+
+**A1. Trỏ tên miền về VPS**
+
+Vào trang quản lý tên miền (Mắt Bão, PA Việt Nam, Cloudflare...), thêm bản ghi:
+
+| Loại | Tên | Giá trị |
+|---|---|---|
+| `A` | `soloi` | `<IP VPS>` |
+
+Không có tên miền? Đăng ký miễn phí tại https://www.duckdns.org (đăng nhập bằng Google), tạo subdomain ví dụ `soloi-visa`, điền IP VPS vào ô `current ip`. Địa chỉ sẽ là `soloi-visa.duckdns.org`.
+
+Nếu dùng Cloudflare: để **đám mây xám (DNS only)** lúc đầu, để Caddy xin được chứng chỉ.
+
+Đợi vài phút rồi kiểm tra trên VPS, phải ra đúng IP của VPS:
+
+```powershell
+Resolve-DnsName soloi.tenmien.vn
+```
+
+**A2. Kiểm tra cổng 80 và 443 còn trống**
+
+```powershell
+Get-NetTCPConnection -LocalPort 80,443 -State Listen -ErrorAction SilentlyContinue
+```
+
+Không in gì là trống. Nếu có, thường là IIS đang chạy: tắt bằng `Stop-Service W3SVC; Set-Service W3SVC -StartupType Disabled` (chỉ làm vậy nếu VPS không dùng IIS cho việc khác).
+
+**A3. Cài Caddy**
+
+1. Tải Caddy tại https://caddyserver.com/download , chọn **Platform: Windows amd64**, bấm Download.
+2. Tạo thư mục `C:\caddy`, chép file vừa tải vào rồi đổi tên thành `caddy.exe`.
+3. Tạo file cấu hình:
+
+   ```powershell
+   notepad C:\caddy\Caddyfile
+   ```
+
+   Notepad hỏi tạo file mới thì bấm Yes, dán nội dung sau (đổi tên miền), lưu lại:
+
+   ```
+   soloi.tenmien.vn {
+       encode gzip
+       reverse_proxy 127.0.0.1:3000
+   }
+   ```
+
+   Lưu ý: file tên đúng là `Caddyfile`, **không có đuôi** `.txt`. Kiểm tra bằng `dir C:\caddy`.
+
+4. Chạy thử (Sổ lỗi phải đang chạy):
+
+   ```powershell
+   cd C:\caddy
+   .\caddy.exe run --config C:\caddy\Caddyfile
+   ```
+
+   Thấy dòng `certificate obtained successfully` là xin được chứng chỉ. Bấm Ctrl+C để dừng.
+
+**A4. Mở tường lửa cho cổng 80 và 443**
+
+```powershell
+New-NetFirewallRule -DisplayName "Caddy HTTP/HTTPS" -Direction Inbound -Protocol TCP -LocalPort 80,443 -Action Allow
+```
+
+Nhà cung cấp VPS có tường lửa riêng trên trang quản lý (Security Group, Firewall...)? Mở thêm cổng **80** và **443** ở đó. Cổng 80 cần để Let's Encrypt xác minh tên miền và để tự chuyển `http://` sang `https://`.
+
+Nếu bước A3 chạy thử bị lỗi xin chứng chỉ (`challenge failed`, `timeout`), thường là do chưa mở cổng ở bước này. Mở xong thì chạy thử lại.
+
+**A5. Cho Caddy chạy nền cùng Windows**
+
+```powershell
+mkdir C:\caddy\logs -Force
+C:\nssm\nssm.exe install Caddy "C:\caddy\caddy.exe" "run --config C:\caddy\Caddyfile"
+C:\nssm\nssm.exe set Caddy AppDirectory "C:\caddy"
+C:\nssm\nssm.exe set Caddy AppStdout "C:\caddy\logs\caddy.log"
+C:\nssm\nssm.exe set Caddy AppStderr "C:\caddy\logs\caddy.log"
+C:\nssm\nssm.exe set Caddy Start SERVICE_AUTO_START
+C:\nssm\nssm.exe start Caddy
+Get-Service Caddy        # Status phải là Running
+```
+
+**A6. Dùng thử**
+
+Từ máy khác (hoặc điện thoại dùng 4G) mở `https://soloi.tenmien.vn`, đăng nhập bằng tài khoản trong `APP_USERS`. Trình duyệt hiện ổ khóa là đã có HTTPS.
+
+Sửa `Caddyfile` sau này thì chạy `C:\nssm\nssm.exe restart Caddy`.
+
+### Cách B: IP + HTTP (chỉ để thử nhanh)
 
 1. Sửa `.env`: `HOST=0.0.0.0`, rồi `C:\nssm\nssm.exe restart SoLoi`.
-2. Mở cổng trên tường lửa Windows:
+2. Mở cổng trên tường lửa Windows (và trên trang quản lý VPS nếu có):
 
    ```powershell
    New-NetFirewallRule -DisplayName "So loi ho so" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
    ```
 
-3. Mọi người vào `http://<IP VPS>:3000`. Nếu nhà cung cấp VPS có tường lửa riêng trên trang quản lý, mở thêm cổng 3000 ở đó.
+3. Mọi người vào `http://<IP VPS>:3000`.
 
-Lưu ý: cách này dùng HTTP, mật khẩu không được mã hóa trên đường truyền. Khi dùng lâu dài nên có tên miền + HTTPS (ví dụ Caddy cho Windows hoặc IIS reverse proxy), mình có thể hướng dẫn thêm khi cần.
+Chuyển từ cách B sang cách A thì đóng cổng 3000 lại và trả `HOST=127.0.0.1` trong `.env`:
+
+```powershell
+Remove-NetFirewallRule -DisplayName "So loi ho so"
+C:\nssm\nssm.exe restart SoLoi
+```
+
+### An toàn khi mở ra Internet
+
+- **Mật khẩu mạnh** cho từng người trong `APP_USERS` (12 ký tự trở lên, không dùng chung). Web chưa có giới hạn số lần đăng nhập sai. Tạo nhanh: `.venv\Scripts\python -c "import secrets; print(secrets.token_urlsafe(12))"`. Sửa xong thì `C:\nssm\nssm.exe restart SoLoi`.
+- Có người nghỉ làm: xóa họ khỏi `APP_USERS` rồi restart.
+- Đường nhận tin `/api/ingest` không cần mở ra ngoài: dự án lọc hồ sơ chạy cùng VPS vẫn gửi qua `http://127.0.0.1:3000` như cũ. Đường này được bảo vệ bằng `INGEST_TOKEN`, đừng để lộ token.
+- Đăng nhập kiểu Basic nên không có nút đăng xuất. Trình duyệt nhớ mật khẩu đến khi đóng hẳn. Dùng máy chung thì mở bằng cửa sổ ẩn danh.
+- Không đặt `HOST=0.0.0.0` khi đã dùng Caddy, vì như vậy người ngoài vẫn vào thẳng được `http://<IP>:3000` mà không qua HTTPS.
 
 ## Sao lưu
 
@@ -186,3 +298,6 @@ Và chép thư mục ảnh `C:\chat-bot-visa\data\images`.
 | Service SoLoi dừng liên tục | Xem `C:\chat-bot-visa\logs\so-loi.log` |
 | Dự án kia log `[so-loi] Chưa gửi được ... 401` | `SO_LOI_TOKEN` không giống `INGEST_TOKEN` |
 | Web báo "Chưa cấu hình ANTHROPIC_API_KEY" | Thêm key vào `.env` rồi `C:\nssm\nssm.exe restart SoLoi` |
+| Mở tên miền không vào được / quay mãi | `Resolve-DnsName` sai IP thì chờ DNS cập nhật. Chưa mở cổng 80/443 trên tường lửa Windows hoặc trang quản lý VPS. Xem `C:\caddy\logs\caddy.log` |
+| Caddy log `challenge failed` | Cổng 80 bị chặn hoặc IIS đang chiếm cổng 80; dùng Cloudflare thì chuyển sang đám mây xám |
+| Vào tên miền báo `502 Bad Gateway` | Sổ lỗi chưa chạy: `Get-Service SoLoi`, xem `logs\so-loi.log` |
